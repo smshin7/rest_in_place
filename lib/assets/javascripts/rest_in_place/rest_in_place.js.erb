@@ -1,0 +1,261 @@
+var $, ESC_KEY, RestInPlaceEditor;
+
+RestInPlaceEditor = (function() {
+  function RestInPlaceEditor(e) {
+    this.$element = $(e);
+    this.initOptions();
+    this.bindForm();
+    this.createClickHandler();
+    this.$element.click(this.clickHandler);
+    this.updateDisplayValue(this.$element.text());
+  }
+
+  RestInPlaceEditor.prototype.activate = function() {
+    this.oldValue = this.elementHTML();
+    this.$element.trigger('activate.rest-in-place');
+    this.$element.addClass('rip-active');
+    this.$element.unbind('click', this.clickHandler);
+    this.activateForm();
+    return this.$element.trigger('ready.rest-in-place');
+  };
+
+  RestInPlaceEditor.prototype.abort = function() {
+    this.$element.trigger('abort.rest-in-place');
+    this.updateDisplayValue(this.oldValue);
+    return this.$element.removeClass('rip-active').click(this.clickHandler);
+  };
+
+  RestInPlaceEditor.prototype.update = function() {
+    var updateRequest;
+    this.$element.trigger('update.rest-in-place');
+    updateRequest = this.ajax({
+      type: "post",
+      data: this.requestData()
+    });
+    updateRequest.done((function(_this) {
+      return function(data) {
+        if (data) {
+          return _this.loadSuccessCallback(data);
+        } else {
+          return _this.loadViaGET();
+        }
+      };
+    })(this));
+    updateRequest.fail((function(_this) {
+      return function(jqXHR, textStatus) {
+        if (jqXHR.status === 200 && textStatus === "parsererror") {
+          return _this.loadViaGET();
+        } else {
+          _this.$element.trigger('failure.rest-in-place', jqXHR.responseJSON);
+          return _this.abort();
+        }
+      };
+    })(this));
+    return this.$element.html("saving...");
+  };
+
+  RestInPlaceEditor.prototype.loadViaGET = function() {
+    var showRequest;
+    showRequest = this.ajax();
+    showRequest.done((function(_this) {
+      return function(data) {
+        return _this.loadSuccessCallback(data);
+      };
+    })(this));
+    return showRequest.fail((function(_this) {
+      return function() {
+        return _this.$element.trigger('failure.rest-in-place', showRequest.responseJSON);
+      };
+    })(this));
+  };
+
+  RestInPlaceEditor.prototype.activateForm = function() {
+    return alert("The form was not properly initialized. activateForm is unbound");
+  };
+
+  RestInPlaceEditor.prototype.getValue = function() {
+    return alert("The form was not properly initialized. getValue is unbound");
+  };
+
+  RestInPlaceEditor.prototype.initOptions = function() {
+    this.$element.parents().each((function(_this) {
+      return function(index, parent) {
+        _this.url = _this.url || $(parent).attr("data-url");
+        _this.formType = _this.formType || $(parent).attr("data-formtype");
+        _this.objectName = _this.objectName || $(parent).attr("data-object");
+        _this.attributeName = _this.attributeName || $(parent).attr("data-attribute");
+        return _this.placeholder = _this.placeholder || $(parent).attr("data-placeholder");
+      };
+    })(this));
+    this.$element.parents().each((function(_this) {
+      return function(index, parent) {
+        var res;
+        if (res = parent.id.match(/^(\w+)_(\d+)$/i)) {
+          return _this.objectName = _this.objectName || res[1];
+        }
+      };
+    })(this));
+    this.url = this.$element.attr("data-url") || this.url || document.location.pathname;
+    this.formType = this.$element.attr("data-formtype") || this.formType || "input";
+    this.objectName = this.$element.attr("data-object") || this.objectName;
+    this.attributeName = this.$element.attr("data-attribute") || this.attributeName;
+    return this.placeholder = this.$element.attr("data-placeholder") || this.placeholder || '';
+  };
+
+  RestInPlaceEditor.prototype.bindForm = function() {
+    this.activateForm = RestInPlaceEditor.forms[this.formType].activateForm;
+    return this.getValue = RestInPlaceEditor.forms[this.formType].getValue;
+  };
+
+  RestInPlaceEditor.prototype.requestData = function() {
+    var data;
+    data = this.getEncodedTokenAuthenticationParams();
+    data["_method"] = 'put';
+    data[this.objectName + "[" + this.attributeName + "]"] = this.getValue();
+    return data;
+  };
+
+  RestInPlaceEditor.prototype.getEncodedTokenAuthenticationParams = function() {
+    var data, param, token;
+    data = {};
+    param = $('meta[name=csrf-param]').attr('content');
+    token = $('meta[name=csrf-token]').attr('content');
+    if (param && token) {
+      data[param] = token;
+    }
+    return data;
+  };
+
+  RestInPlaceEditor.prototype.ajax = function(options) {
+    if (options == null) {
+      options = {};
+    }
+    options.url = this.url;
+    options.dataType = "json";
+    return $.ajax(options);
+  };
+
+  RestInPlaceEditor.prototype.extractAttributeFromData = function(data) {
+    if (this.include_root_in_json) {
+      return data[this.objectName][this.attributeName];
+    } else {
+      return data[this.attributeName];
+    }
+  };
+
+  RestInPlaceEditor.prototype.updateDisplayValue = function(value) {
+    if ($.trim(value).length < 1) {
+      return this.$element.html(this.placeholderHTML());
+    } else {
+      return this.$element.text(value);
+    }
+  };
+
+  RestInPlaceEditor.prototype.placeholderHTML = function() {
+    return "<span class=\"rest-in-placeholder\">" + this.placeholder + "</span>";
+  };
+
+  RestInPlaceEditor.prototype.elementHTML = function() {
+    var value;
+    value = this.$element.text();
+    if (value === this.placeholderHTML()) {
+      value = '';
+    }
+    return value;
+  };
+
+  RestInPlaceEditor.prototype.loadSuccessCallback = function(data) {
+    this.updateDisplayValue(this.extractAttributeFromData(data));
+    this.$element.click(this.clickHandler);
+    this.$element.removeClass('rip-active');
+    return this.$element.trigger('success.rest-in-place', data);
+  };
+
+  RestInPlaceEditor.prototype.createClickHandler = function() {
+    return this.clickHandler = (function(_this) {
+      return function(event) {
+        return _this.activate();
+      };
+    })(this);
+  };
+
+  return RestInPlaceEditor;
+
+})();
+
+RestInPlaceEditor.forms = {
+  "input": {
+    activateForm: function() {
+      var value;
+      value = $.trim(this.elementHTML());
+      this.$element.html("<form action=\"javascript:void(0)\" style=\"display:inline;\">\n<input type=\"text\" class=\"rest-in-place-" + this.attributeName + "\" placeholder=\"" + this.placeholder + "\">\n</form>");
+      this.$element.find('input').val(value);
+      this.$element.find('input')[0].select();
+      this.$element.find("form").submit((function(_this) {
+        return function() {
+          _this.update();
+          return false;
+        };
+      })(this));
+      this.$element.find("input").keyup((function(_this) {
+        return function(e) {
+          if (e.keyCode === ESC_KEY) {
+            return _this.abort();
+          }
+        };
+      })(this));
+      return this.$element.find("input").blur((function(_this) {
+        return function() {
+          return _this.abort();
+        };
+      })(this));
+    },
+    getValue: function() {
+      return this.$element.find("input").val();
+    }
+  },
+  "textarea": {
+    activateForm: function() {
+      var value;
+      value = $.trim(this.elementHTML());
+      this.$element.html("<form action=\"javascript:void(0)\" style=\"display:inline;\">\n<textarea class=\"rest-in-place-" + this.attributeName + "\" placeholder=\"" + this.placeholder + "\"></textarea>\n</form>");
+      this.$element.find('textarea').val(value);
+      this.$element.find('textarea')[0].select();
+      this.$element.find("textarea").keyup((function(_this) {
+        return function(e) {
+          if (e.keyCode === ESC_KEY) {
+            return _this.abort();
+          }
+        };
+      })(this));
+      return this.$element.find("textarea").blur((function(_this) {
+        return function() {
+          return _this.update();
+        };
+      })(this));
+    },
+    getValue: function() {
+      return this.$element.find("textarea").val();
+    }
+  }
+};
+
+ESC_KEY = 27;
+
+$ = jQuery;
+
+RestInPlaceEditor.prototype.include_root_in_json = "<%= RestInPlace.include_root_in_json? %>" === "true";
+
+window.RestInPlaceEditor = RestInPlaceEditor;
+
+$.fn.restInPlace = function() {
+  this.each(function() {
+    return $(this).data('restInPlaceEditor', new RestInPlaceEditor(this));
+  });
+  return this;
+};
+
+$(document).on('ready page:load', function() {
+  return $('.rest-in-place').restInPlace();
+});
+
